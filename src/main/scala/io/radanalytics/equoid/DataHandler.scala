@@ -29,7 +29,7 @@ object DataHandler {
         val itemID: String = body.getValue.asInstanceOf[String]
         val primaryVal: String = itemID.split(",")(0)
         opMode match {
-          case "linear" => Some(primaryVal)
+          case "linear" => Some(itemID)
           case "single" => Some(primaryVal)
           case "dual" => Some(itemID)
           case x => { println(s"unexpected opMode"); None }
