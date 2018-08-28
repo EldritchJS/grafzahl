@@ -27,10 +27,10 @@ object DataHandler {
     message.getBody match {
       case body: AmqpValue => {
         val itemID: String = body.getValue.asInstanceOf[String]
-        val primaryVal: String = itemID.split(",")(0)
+        //val primaryVal: String = itemID.split(",")(0)
         opMode match {
           case "linear" => Some(itemID)
-          case "single" => Some(primaryVal)
+          case "single" => Some(itemID.split(",")(0))
           case "dual" => Some(itemID)
           case x => { println(s"unexpected opMode"); None }
         }
