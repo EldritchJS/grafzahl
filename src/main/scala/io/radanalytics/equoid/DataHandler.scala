@@ -12,9 +12,8 @@ import org.infinispan.client.hotrod.configuration.ConfigurationBuilder
 object DataHandler {
 
   private val checkpointDir: String = "/tmp/equoid-data-handler"
-  
-  def main(args: Array[String]): Unit = {
 
+  def main(args: Array[String]): Unit = {
     val ssc = StreamingContext.getOrCreate(checkpointDir, createStreamingContext)
     ssc.sparkContext.setLogLevel("ERROR")
     
@@ -23,12 +22,18 @@ object DataHandler {
     ssc.stop()
   }
 
-  def messageConverter(message: Message): Option[String] = {
+  def messageConverter(message: Message, opMode: String): Option[String] = {
 
     message.getBody match {
       case body: AmqpValue => {
         val itemID: String = body.getValue.asInstanceOf[String]
-        Some(itemID)
+        //val primaryVal: String = itemID.split(",")(0)
+        opMode match {
+          case "linear" => Some(itemID)
+          case "single" => Some(itemID.split(",")(0))
+          case "dual" => Some(itemID)
+          case x => { println(s"unexpected opMode"); None }
+        }
       }
       case x => { println(s"unexpected type ${x.getClass.getName}"); None }
     }
@@ -52,7 +57,7 @@ object DataHandler {
     val amqpPort = getProp("AMQP_PORT", "5672").toInt
     val username = Option(getProp("AMQP_USERNAME", "daikon"))
     val password = Option(getProp("AMQP_PASSWORD", "daikon"))
-    val address = getProp("QUEUE_NAME", "salesq")
+    val address = getProp("QUEUE_NAME", "recordq")
     val infinispanHost = getProp("JDG_HOST", "datagrid-hotrod")
     val infinispanPort = getProp("JDG_PORT", "11222").toInt
     val k = getProp("CMS_K", "3").toInt
@@ -61,18 +66,17 @@ object DataHandler {
     val windowSeconds = getProp("WINDOW_SECONDS", "30").toInt
     val slideSeconds = getProp("SLIDE_SECONDS", "30").toInt
     val batchSeconds = getProp("SLIDE_SECONDS", "30").toInt
-
+    val opMode = getProp("OP_MODE", "single")
     // store something in the JDG for this interval so that we can give something quickly to the user
     storeTopK(windowSeconds.toString, Vector(("nothing", 0)), infinispanHost, infinispanPort)
 
-    //val sparkMaster = getProp("SPARK_MASTER", "spark://sparky:7077")
-    val conf = new SparkConf() //.setMaster(sparkMaster).setAppName(getClass().getSimpleName())
+    val conf = new SparkConf()
     conf.set("spark.streaming.receiver.writeAheadLog.enable", "true")
 
     val ssc = new StreamingContext(conf, Seconds(batchSeconds))
     ssc.checkpoint(checkpointDir)
 
-    val receiveStream = AMQPUtils.createStream(ssc, amqpHost, amqpPort, username, password, address, messageConverter _, StorageLevel.MEMORY_ONLY)
+    val receiveStream = AMQPUtils.createStream(ssc, amqpHost, amqpPort, username, password, address, messageConverter (_,opMode), StorageLevel.MEMORY_ONLY)
       .transform( rdd => {
         rdd.mapPartitions( rows => {
           Iterator(rows.foldLeft(TopK.empty[String](k, epsilon, confidence))(_ + _))
